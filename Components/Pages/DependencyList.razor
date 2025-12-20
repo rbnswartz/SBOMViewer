@@ -3,6 +3,7 @@
 @using SBOMViewer.Data
 @inject ApplicationDbContext DbContext
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 @rendermode InteractiveServer
 
 <PageTitle>Dependencies</PageTitle>
@@ -81,9 +82,27 @@ else
 
     private async Task Delete(int id)
     {
-        var item = await DbContext.Dependencies.FindAsync(id);
+        var item = await DbContext.Dependencies
+            .Include(d => d.SoftwareUsages)
+            .FirstOrDefaultAsync(d => d.Id == id);
+            
         if (item != null)
         {
+            if (item.SoftwareUsages.Any())
+            {
+                if (!await JS.InvokeAsync<bool>("confirm", $"'{item.Name}' is used by {item.SoftwareUsages.Count} software item(s). Deleting this dependency will remove it from all software. Are you sure?"))
+                {
+                    return;
+                }
+            }
+            else
+            {
+                if (!await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to delete '{item.Name}'?"))
+                {
+                    return;
+                }
+            }
+            
             DbContext.Dependencies.Remove(item);
             await DbContext.SaveChangesAsync();
             await LoadData();

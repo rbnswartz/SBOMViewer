@@ -158,7 +158,7 @@ else
 
     private async Task ProcessSBOM(string jsonContent)
     {
-        var doc = JsonDocument.Parse(jsonContent);
+        using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
 
         // Detect format and process
@@ -183,6 +183,14 @@ else
             return;
         }
 
+        // Load all dependencies and existing software dependencies upfront
+        var allDependencies = await DbContext.Dependencies.ToDictionaryAsync(d => d.Name, d => d);
+        var existingSoftwareDeps = await DbContext.SoftwareDependencies
+            .Where(sd => sd.SoftwareId == Id)
+            .ToListAsync();
+
+        var newSoftwareDeps = new List<SoftwareDependency>();
+
         foreach (var component in components.EnumerateArray())
         {
             var name = component.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
@@ -191,8 +199,14 @@ else
 
             if (!string.IsNullOrEmpty(name))
             {
-                await AddOrUpdateDependency(name, version ?? "unknown", description);
+                ProcessDependency(name, version ?? "unknown", description, allDependencies, existingSoftwareDeps, newSoftwareDeps);
             }
+        }
+
+        if (newSoftwareDeps.Any())
+        {
+            DbContext.SoftwareDependencies.AddRange(newSoftwareDeps);
+            await DbContext.SaveChangesAsync();
         }
     }
 
@@ -203,6 +217,14 @@ else
             return;
         }
 
+        // Load all dependencies and existing software dependencies upfront
+        var allDependencies = await DbContext.Dependencies.ToDictionaryAsync(d => d.Name, d => d);
+        var existingSoftwareDeps = await DbContext.SoftwareDependencies
+            .Where(sd => sd.SoftwareId == Id)
+            .ToListAsync();
+
+        var newSoftwareDeps = new List<SoftwareDependency>();
+
         foreach (var package in packages.EnumerateArray())
         {
             var name = package.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
@@ -211,16 +233,24 @@ else
 
             if (!string.IsNullOrEmpty(name))
             {
-                await AddOrUpdateDependency(name, version ?? "unknown", description);
+                ProcessDependency(name, version ?? "unknown", description, allDependencies, existingSoftwareDeps, newSoftwareDeps);
             }
+        }
+
+        if (newSoftwareDeps.Any())
+        {
+            DbContext.SoftwareDependencies.AddRange(newSoftwareDeps);
+            await DbContext.SaveChangesAsync();
         }
     }
 
-    private async Task AddOrUpdateDependency(string name, string version, string? description)
+    private void ProcessDependency(string name, string version, string? description, 
+        Dictionary<string, Dependency> allDependencies, 
+        List<SoftwareDependency> existingSoftwareDeps, 
+        List<SoftwareDependency> newSoftwareDeps)
     {
         // Find or create dependency
-        var dependency = await DbContext.Dependencies.FirstOrDefaultAsync(d => d.Name == name);
-        if (dependency == null)
+        if (!allDependencies.TryGetValue(name, out var dependency))
         {
             dependency = new Dependency
             {
@@ -228,24 +258,22 @@ else
                 Description = description
             };
             DbContext.Dependencies.Add(dependency);
-            await DbContext.SaveChangesAsync();
+            allDependencies[name] = dependency;
         }
 
         // Check if this dependency version already exists for this software
-        var existing = await DbContext.SoftwareDependencies
-            .FirstOrDefaultAsync(sd => sd.SoftwareId == Id && sd.DependencyId == dependency.Id && sd.Version == version);
+        var exists = existingSoftwareDeps.Any(sd => sd.DependencyId == dependency.Id && sd.Version == version) ||
+                     newSoftwareDeps.Any(sd => sd.Dependency == dependency && sd.Version == version);
 
-        if (existing == null)
+        if (!exists)
         {
-            var softwareDependency = new SoftwareDependency
+            newSoftwareDeps.Add(new SoftwareDependency
             {
                 SoftwareId = Id,
-                DependencyId = dependency.Id,
+                Dependency = dependency,
                 Version = version,
                 AddedDate = DateTime.UtcNow
-            };
-            DbContext.SoftwareDependencies.Add(softwareDependency);
-            await DbContext.SaveChangesAsync();
+            });
         }
     }
 
