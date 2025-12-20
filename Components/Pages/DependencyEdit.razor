@@ -1,0 +1,94 @@
+@page "/dependencies/create"
+@page "/dependencies/edit/{id:int}"
+@using Microsoft.EntityFrameworkCore
+@using SBOMViewer.Data
+@using System.ComponentModel.DataAnnotations
+@inject ApplicationDbContext DbContext
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>@(Id == null ? "Create Dependency" : "Edit Dependency")</PageTitle>
+
+<h1>@(Id == null ? "Create Dependency" : "Edit Dependency")</h1>
+
+<EditForm Model="@model" OnValidSubmit="@HandleSubmit">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="mb-3">
+        <label for="name" class="form-label">Name</label>
+        <InputText id="name" class="form-control" @bind-Value="model.Name" />
+        <ValidationMessage For="@(() => model.Name)" />
+    </div>
+
+    <div class="mb-3">
+        <label for="description" class="form-label">Description</label>
+        <InputTextArea id="description" class="form-control" @bind-Value="model.Description" rows="3" />
+        <ValidationMessage For="@(() => model.Description)" />
+    </div>
+
+    <div>
+        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" class="btn btn-secondary" @onclick="Cancel">Cancel</button>
+    </div>
+</EditForm>
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private DependencyModel model = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id.HasValue)
+        {
+            var dependency = await DbContext.Dependencies.FindAsync(Id.Value);
+            if (dependency != null)
+            {
+                model.Name = dependency.Name;
+                model.Description = dependency.Description;
+            }
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (Id.HasValue)
+        {
+            var dependency = await DbContext.Dependencies.FindAsync(Id.Value);
+            if (dependency != null)
+            {
+                dependency.Name = model.Name;
+                dependency.Description = model.Description;
+            }
+        }
+        else
+        {
+            var dependency = new Dependency
+            {
+                Name = model.Name,
+                Description = model.Description
+            };
+            DbContext.Dependencies.Add(dependency);
+        }
+
+        await DbContext.SaveChangesAsync();
+        Navigation.NavigateTo("/dependencies");
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/dependencies");
+    }
+
+    public class DependencyModel
+    {
+        [Required]
+        [StringLength(200)]
+        public string Name { get; set; } = string.Empty;
+
+        [StringLength(500)]
+        public string? Description { get; set; }
+    }
+}

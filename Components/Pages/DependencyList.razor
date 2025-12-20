@@ -1,0 +1,119 @@
+@page "/dependencies"
+@using Microsoft.EntityFrameworkCore
+@using SBOMViewer.Data
+@inject ApplicationDbContext DbContext
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>Dependencies</PageTitle>
+
+<h1>Dependencies</h1>
+
+<p>
+    <button class="btn btn-primary" @onclick="CreateNew">Create New</button>
+</p>
+
+@if (dependencies == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Usage Count</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in dependencies)
+            {
+                <tr>
+                    <td>@item.Name</td>
+                    <td>@item.Description</td>
+                    <td>@item.UsageCount</td>
+                    <td>
+                        <button class="btn btn-sm btn-primary" @onclick="() => Edit(item.Id)">Edit</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => Delete(item.Id)">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<DependencyViewModel>? dependencies;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        var deps = await DbContext.Dependencies
+            .Include(d => d.SoftwareUsages)
+            .OrderBy(d => d.Name)
+            .ToListAsync();
+
+        dependencies = deps.Select(d => new DependencyViewModel
+        {
+            Id = d.Id,
+            Name = d.Name,
+            Description = d.Description,
+            UsageCount = d.SoftwareUsages.Count
+        }).ToList();
+    }
+
+    private void CreateNew()
+    {
+        Navigation.NavigateTo("/dependencies/create");
+    }
+
+    private void Edit(int id)
+    {
+        Navigation.NavigateTo($"/dependencies/edit/{id}");
+    }
+
+    private async Task Delete(int id)
+    {
+        var item = await DbContext.Dependencies
+            .Include(d => d.SoftwareUsages)
+            .FirstOrDefaultAsync(d => d.Id == id);
+            
+        if (item != null)
+        {
+            if (item.SoftwareUsages.Any())
+            {
+                if (!await JS.InvokeAsync<bool>("confirm", $"'{item.Name}' is used by {item.SoftwareUsages.Count} software item(s). Deleting this dependency will remove it from all software. Are you sure?"))
+                {
+                    return;
+                }
+            }
+            else
+            {
+                if (!await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to delete '{item.Name}'?"))
+                {
+                    return;
+                }
+            }
+            
+            DbContext.Dependencies.Remove(item);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+
+    private class DependencyViewModel
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public int UsageCount { get; set; }
+    }
+}

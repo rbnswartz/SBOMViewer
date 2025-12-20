@@ -1,0 +1,94 @@
+@page "/software/create"
+@page "/software/edit/{id:int}"
+@using Microsoft.EntityFrameworkCore
+@using SBOMViewer.Data
+@using System.ComponentModel.DataAnnotations
+@inject ApplicationDbContext DbContext
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>@(Id == null ? "Create Software" : "Edit Software")</PageTitle>
+
+<h1>@(Id == null ? "Create Software" : "Edit Software")</h1>
+
+<EditForm Model="@model" OnValidSubmit="@HandleSubmit">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="mb-3">
+        <label for="name" class="form-label">Name</label>
+        <InputText id="name" class="form-control" @bind-Value="model.Name" />
+        <ValidationMessage For="@(() => model.Name)" />
+    </div>
+
+    <div class="mb-3">
+        <label for="description" class="form-label">Description</label>
+        <InputTextArea id="description" class="form-control" @bind-Value="model.Description" rows="3" />
+        <ValidationMessage For="@(() => model.Description)" />
+    </div>
+
+    <div>
+        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" class="btn btn-secondary" @onclick="Cancel">Cancel</button>
+    </div>
+</EditForm>
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private SoftwareModel model = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id.HasValue)
+        {
+            var software = await DbContext.Software.FindAsync(Id.Value);
+            if (software != null)
+            {
+                model.Name = software.Name;
+                model.Description = software.Description;
+            }
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (Id.HasValue)
+        {
+            var software = await DbContext.Software.FindAsync(Id.Value);
+            if (software != null)
+            {
+                software.Name = model.Name;
+                software.Description = model.Description;
+            }
+        }
+        else
+        {
+            var software = new Software
+            {
+                Name = model.Name,
+                Description = model.Description
+            };
+            DbContext.Software.Add(software);
+        }
+
+        await DbContext.SaveChangesAsync();
+        Navigation.NavigateTo("/software");
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/software");
+    }
+
+    public class SoftwareModel
+    {
+        [Required]
+        [StringLength(200)]
+        public string Name { get; set; } = string.Empty;
+
+        [StringLength(500)]
+        public string? Description { get; set; }
+    }
+}

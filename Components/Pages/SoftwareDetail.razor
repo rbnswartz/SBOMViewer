@@ -1,0 +1,355 @@
+@page "/software/{id:int}"
+@using Microsoft.EntityFrameworkCore
+@using SBOMViewer.Data
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@inject ApplicationDbContext DbContext
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>@software?.Name</PageTitle>
+
+@if (software == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <h1>@software.Name</h1>
+    <p>@software.Description</p>
+
+    <div class="mb-3">
+        <button class="btn btn-primary" @onclick="@(() => Navigation.NavigateTo($"/software/edit/{Id}"))">Edit Software</button>
+        <button class="btn btn-success" @onclick="ShowUploadDialog">Upload SBOM</button>
+        <button class="btn btn-secondary" @onclick="@(() => Navigation.NavigateTo("/software"))">Back to List</button>
+    </div>
+
+    @if (showUpload)
+    {
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Upload Software Bill of Materials</h5>
+                <div class="mb-3">
+                    <label for="sbomFile" class="form-label">Select SBOM file (JSON format - CycloneDX or SPDX)</label>
+                    <InputFile id="sbomFile" class="form-control" OnChange="@HandleFileUpload" accept=".json" />
+                </div>
+                @if (!string.IsNullOrEmpty(uploadMessage))
+                {
+                    <div class="alert @(uploadSuccess ? "alert-success" : "alert-danger")">
+                        @uploadMessage
+                    </div>
+                }
+                <button class="btn btn-secondary" @onclick="HideUploadDialog">Cancel</button>
+            </div>
+        </div>
+    }
+
+    <h2>Dependencies</h2>
+    @if (dependencies == null)
+    {
+        <p><em>Loading dependencies...</em></p>
+    }
+    else if (!dependencies.Any())
+    {
+        <p><em>No dependencies found. Upload an SBOM to add dependencies.</em></p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Version</th>
+                    <th>Description</th>
+                    <th>Added Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in dependencies)
+                {
+                    <tr>
+                        <td>@item.Dependency.Name</td>
+                        <td>@item.Version</td>
+                        <td>@item.Dependency.Description</td>
+                        <td>@item.AddedDate.ToLocalTime().ToString("g")</td>
+                        <td>
+                            <button class="btn btn-sm btn-danger" @onclick="() => RemoveDependency(item.Id)">Remove</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private Software? software;
+    private List<SoftwareDependency>? dependencies;
+    private bool showUpload = false;
+    private string? uploadMessage;
+    private bool uploadSuccess = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        software = await DbContext.Software.FindAsync(Id);
+        
+        if (software != null)
+        {
+            dependencies = await DbContext.SoftwareDependencies
+                .Include(sd => sd.Dependency)
+                .Where(sd => sd.SoftwareId == Id)
+                .OrderBy(sd => sd.Dependency.Name)
+                .ToListAsync();
+        }
+    }
+
+    private void ShowUploadDialog()
+    {
+        showUpload = true;
+        uploadMessage = null;
+    }
+
+    private void HideUploadDialog()
+    {
+        showUpload = false;
+        uploadMessage = null;
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        uploadMessage = null;
+        uploadSuccess = false;
+
+        try
+        {
+            var file = e.File;
+            if (file.Size > 10 * 1024 * 1024) // 10MB limit
+            {
+                uploadMessage = "File is too large. Maximum size is 10MB.";
+                return;
+            }
+
+            using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var reader = new StreamReader(stream);
+            var content = await reader.ReadToEndAsync();
+
+            await ProcessSBOM(content);
+            
+            uploadSuccess = true;
+            uploadMessage = "SBOM uploaded successfully!";
+            showUpload = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            uploadMessage = $"Error uploading SBOM: {ex.Message}";
+            uploadSuccess = false;
+        }
+    }
+
+    private async Task ProcessSBOM(string jsonContent)
+    {
+        using var doc = JsonDocument.Parse(jsonContent);
+        var root = doc.RootElement;
+
+        // Detect format and process
+        if (root.TryGetProperty("bomFormat", out var bomFormat) && bomFormat.GetString() == "CycloneDX")
+        {
+            var sbom = JsonSerializer.Deserialize<CycloneDxSbom>(jsonContent, new JsonSerializerOptions 
+            { 
+                PropertyNameCaseInsensitive = true 
+            });
+            if (sbom != null)
+            {
+                await ProcessCycloneDX(sbom);
+            }
+        }
+        else if (root.TryGetProperty("spdxVersion", out _))
+        {
+            var sbom = JsonSerializer.Deserialize<SpdxSbom>(jsonContent, new JsonSerializerOptions 
+            { 
+                PropertyNameCaseInsensitive = true 
+            });
+            if (sbom != null)
+            {
+                await ProcessSPDX(sbom);
+            }
+        }
+        else
+        {
+            throw new Exception("Unknown SBOM format. Supported formats are CycloneDX and SPDX.");
+        }
+    }
+
+    private async Task ProcessCycloneDX(CycloneDxSbom sbom)
+    {
+        if (sbom.Components == null || !sbom.Components.Any())
+        {
+            return;
+        }
+
+        // Load all dependencies and existing software dependencies upfront
+        var allDependencies = await DbContext.Dependencies.ToDictionaryAsync(d => d.Name, d => d);
+        var existingSoftwareDeps = await DbContext.SoftwareDependencies
+            .Where(sd => sd.SoftwareId == Id)
+            .ToListAsync();
+
+        var newSoftwareDeps = new List<SoftwareDependency>();
+
+        foreach (var component in sbom.Components)
+        {
+            if (!string.IsNullOrEmpty(component.Name))
+            {
+                ProcessDependency(
+                    component.Name, 
+                    component.Version ?? "unknown", 
+                    component.Description, 
+                    allDependencies, 
+                    existingSoftwareDeps, 
+                    newSoftwareDeps);
+            }
+        }
+
+        if (newSoftwareDeps.Any())
+        {
+            DbContext.SoftwareDependencies.AddRange(newSoftwareDeps);
+            await DbContext.SaveChangesAsync();
+        }
+    }
+
+    private async Task ProcessSPDX(SpdxSbom sbom)
+    {
+        if (sbom.Packages == null || !sbom.Packages.Any())
+        {
+            return;
+        }
+
+        // Load all dependencies and existing software dependencies upfront
+        var allDependencies = await DbContext.Dependencies.ToDictionaryAsync(d => d.Name, d => d);
+        var existingSoftwareDeps = await DbContext.SoftwareDependencies
+            .Where(sd => sd.SoftwareId == Id)
+            .ToListAsync();
+
+        var newSoftwareDeps = new List<SoftwareDependency>();
+
+        foreach (var package in sbom.Packages)
+        {
+            if (!string.IsNullOrEmpty(package.Name))
+            {
+                ProcessDependency(
+                    package.Name, 
+                    package.VersionInfo ?? "unknown", 
+                    package.Description, 
+                    allDependencies, 
+                    existingSoftwareDeps, 
+                    newSoftwareDeps);
+            }
+        }
+
+        if (newSoftwareDeps.Any())
+        {
+            DbContext.SoftwareDependencies.AddRange(newSoftwareDeps);
+            await DbContext.SaveChangesAsync();
+        }
+    }
+
+    private void ProcessDependency(string name, string version, string? description, 
+        Dictionary<string, Dependency> allDependencies, 
+        List<SoftwareDependency> existingSoftwareDeps, 
+        List<SoftwareDependency> newSoftwareDeps)
+    {
+        // Find or create dependency
+        if (!allDependencies.TryGetValue(name, out var dependency))
+        {
+            dependency = new Dependency
+            {
+                Name = name,
+                Description = description
+            };
+            DbContext.Dependencies.Add(dependency);
+            allDependencies[name] = dependency;
+        }
+
+        // Check if this dependency version already exists for this software
+        var exists = existingSoftwareDeps.Any(sd => sd.DependencyId == dependency.Id && sd.Version == version) ||
+                     newSoftwareDeps.Any(sd => sd.Dependency == dependency && sd.Version == version);
+
+        if (!exists)
+        {
+            newSoftwareDeps.Add(new SoftwareDependency
+            {
+                SoftwareId = Id,
+                Dependency = dependency,
+                Version = version,
+                AddedDate = DateTime.UtcNow
+            });
+        }
+    }
+
+    private async Task RemoveDependency(int softwareDependencyId)
+    {
+        var item = await DbContext.SoftwareDependencies.FindAsync(softwareDependencyId);
+        if (item != null)
+        {
+            DbContext.SoftwareDependencies.Remove(item);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+
+    // SBOM Model Classes
+    private class CycloneDxSbom
+    {
+        [JsonPropertyName("bomFormat")]
+        public string? BomFormat { get; set; }
+        
+        [JsonPropertyName("specVersion")]
+        public string? SpecVersion { get; set; }
+        
+        [JsonPropertyName("components")]
+        public List<CycloneDxComponent>? Components { get; set; }
+    }
+
+    private class CycloneDxComponent
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+        
+        [JsonPropertyName("version")]
+        public string? Version { get; set; }
+        
+        [JsonPropertyName("description")]
+        public string? Description { get; set; }
+    }
+
+    private class SpdxSbom
+    {
+        [JsonPropertyName("spdxVersion")]
+        public string? SpdxVersion { get; set; }
+        
+        [JsonPropertyName("packages")]
+        public List<SpdxPackage>? Packages { get; set; }
+    }
+
+    private class SpdxPackage
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+        
+        [JsonPropertyName("versionInfo")]
+        public string? VersionInfo { get; set; }
+        
+        [JsonPropertyName("description")]
+        public string? Description { get; set; }
+    }
+}
