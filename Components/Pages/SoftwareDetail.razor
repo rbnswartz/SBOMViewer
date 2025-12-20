@@ -1,0 +1,262 @@
+@page "/software/{id:int}"
+@using Microsoft.EntityFrameworkCore
+@using SBOMViewer.Data
+@using System.Text.Json
+@inject ApplicationDbContext DbContext
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>@software?.Name</PageTitle>
+
+@if (software == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <h1>@software.Name</h1>
+    <p>@software.Description</p>
+
+    <div class="mb-3">
+        <button class="btn btn-primary" @onclick="@(() => Navigation.NavigateTo($"/software/edit/{Id}"))">Edit Software</button>
+        <button class="btn btn-success" @onclick="ShowUploadDialog">Upload SBOM</button>
+        <button class="btn btn-secondary" @onclick="@(() => Navigation.NavigateTo("/software"))">Back to List</button>
+    </div>
+
+    @if (showUpload)
+    {
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">Upload Software Bill of Materials</h5>
+                <div class="mb-3">
+                    <label for="sbomFile" class="form-label">Select SBOM file (JSON format - CycloneDX or SPDX)</label>
+                    <InputFile id="sbomFile" class="form-control" OnChange="@HandleFileUpload" accept=".json" />
+                </div>
+                @if (!string.IsNullOrEmpty(uploadMessage))
+                {
+                    <div class="alert @(uploadSuccess ? "alert-success" : "alert-danger")">
+                        @uploadMessage
+                    </div>
+                }
+                <button class="btn btn-secondary" @onclick="HideUploadDialog">Cancel</button>
+            </div>
+        </div>
+    }
+
+    <h2>Dependencies</h2>
+    @if (dependencies == null)
+    {
+        <p><em>Loading dependencies...</em></p>
+    }
+    else if (!dependencies.Any())
+    {
+        <p><em>No dependencies found. Upload an SBOM to add dependencies.</em></p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Version</th>
+                    <th>Description</th>
+                    <th>Added Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in dependencies)
+                {
+                    <tr>
+                        <td>@item.Dependency.Name</td>
+                        <td>@item.Version</td>
+                        <td>@item.Dependency.Description</td>
+                        <td>@item.AddedDate.ToLocalTime().ToString("g")</td>
+                        <td>
+                            <button class="btn btn-sm btn-danger" @onclick="() => RemoveDependency(item.Id)">Remove</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private Software? software;
+    private List<SoftwareDependency>? dependencies;
+    private bool showUpload = false;
+    private string? uploadMessage;
+    private bool uploadSuccess = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        software = await DbContext.Software.FindAsync(Id);
+        
+        if (software != null)
+        {
+            dependencies = await DbContext.SoftwareDependencies
+                .Include(sd => sd.Dependency)
+                .Where(sd => sd.SoftwareId == Id)
+                .OrderBy(sd => sd.Dependency.Name)
+                .ToListAsync();
+        }
+    }
+
+    private void ShowUploadDialog()
+    {
+        showUpload = true;
+        uploadMessage = null;
+    }
+
+    private void HideUploadDialog()
+    {
+        showUpload = false;
+        uploadMessage = null;
+    }
+
+    private async Task HandleFileUpload(InputFileChangeEventArgs e)
+    {
+        uploadMessage = null;
+        uploadSuccess = false;
+
+        try
+        {
+            var file = e.File;
+            if (file.Size > 10 * 1024 * 1024) // 10MB limit
+            {
+                uploadMessage = "File is too large. Maximum size is 10MB.";
+                return;
+            }
+
+            using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var reader = new StreamReader(stream);
+            var content = await reader.ReadToEndAsync();
+
+            await ProcessSBOM(content);
+            
+            uploadSuccess = true;
+            uploadMessage = "SBOM uploaded successfully!";
+            showUpload = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            uploadMessage = $"Error uploading SBOM: {ex.Message}";
+            uploadSuccess = false;
+        }
+    }
+
+    private async Task ProcessSBOM(string jsonContent)
+    {
+        var doc = JsonDocument.Parse(jsonContent);
+        var root = doc.RootElement;
+
+        // Detect format and process
+        if (root.TryGetProperty("bomFormat", out var bomFormat) && bomFormat.GetString() == "CycloneDX")
+        {
+            await ProcessCycloneDX(root);
+        }
+        else if (root.TryGetProperty("spdxVersion", out _))
+        {
+            await ProcessSPDX(root);
+        }
+        else
+        {
+            throw new Exception("Unknown SBOM format. Supported formats are CycloneDX and SPDX.");
+        }
+    }
+
+    private async Task ProcessCycloneDX(JsonElement root)
+    {
+        if (!root.TryGetProperty("components", out var components))
+        {
+            return;
+        }
+
+        foreach (var component in components.EnumerateArray())
+        {
+            var name = component.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
+            var version = component.TryGetProperty("version", out var versionEl) ? versionEl.GetString() : "unknown";
+            var description = component.TryGetProperty("description", out var descEl) ? descEl.GetString() : null;
+
+            if (!string.IsNullOrEmpty(name))
+            {
+                await AddOrUpdateDependency(name, version ?? "unknown", description);
+            }
+        }
+    }
+
+    private async Task ProcessSPDX(JsonElement root)
+    {
+        if (!root.TryGetProperty("packages", out var packages))
+        {
+            return;
+        }
+
+        foreach (var package in packages.EnumerateArray())
+        {
+            var name = package.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
+            var version = package.TryGetProperty("versionInfo", out var versionEl) ? versionEl.GetString() : "unknown";
+            var description = package.TryGetProperty("description", out var descEl) ? descEl.GetString() : null;
+
+            if (!string.IsNullOrEmpty(name))
+            {
+                await AddOrUpdateDependency(name, version ?? "unknown", description);
+            }
+        }
+    }
+
+    private async Task AddOrUpdateDependency(string name, string version, string? description)
+    {
+        // Find or create dependency
+        var dependency = await DbContext.Dependencies.FirstOrDefaultAsync(d => d.Name == name);
+        if (dependency == null)
+        {
+            dependency = new Dependency
+            {
+                Name = name,
+                Description = description
+            };
+            DbContext.Dependencies.Add(dependency);
+            await DbContext.SaveChangesAsync();
+        }
+
+        // Check if this dependency version already exists for this software
+        var existing = await DbContext.SoftwareDependencies
+            .FirstOrDefaultAsync(sd => sd.SoftwareId == Id && sd.DependencyId == dependency.Id && sd.Version == version);
+
+        if (existing == null)
+        {
+            var softwareDependency = new SoftwareDependency
+            {
+                SoftwareId = Id,
+                DependencyId = dependency.Id,
+                Version = version,
+                AddedDate = DateTime.UtcNow
+            };
+            DbContext.SoftwareDependencies.Add(softwareDependency);
+            await DbContext.SaveChangesAsync();
+        }
+    }
+
+    private async Task RemoveDependency(int softwareDependencyId)
+    {
+        var item = await DbContext.SoftwareDependencies.FindAsync(softwareDependencyId);
+        if (item != null)
+        {
+            DbContext.SoftwareDependencies.Remove(item);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+}

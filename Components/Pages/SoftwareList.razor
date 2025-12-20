@@ -1,0 +1,83 @@
+@page "/software"
+@using Microsoft.EntityFrameworkCore
+@using SBOMViewer.Data
+@inject ApplicationDbContext DbContext
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Software</PageTitle>
+
+<h1>Software</h1>
+
+<p>
+    <button class="btn btn-primary" @onclick="CreateNew">Create New</button>
+</p>
+
+@if (software == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in software)
+            {
+                <tr>
+                    <td>
+                        <a href="@($"/software/{item.Id}")">@item.Name</a>
+                    </td>
+                    <td>@item.Description</td>
+                    <td>
+                        <button class="btn btn-sm btn-primary" @onclick="() => Edit(item.Id)">Edit</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => Delete(item.Id)">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<Software>? software;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        software = await DbContext.Software
+            .OrderBy(s => s.Name)
+            .ToListAsync();
+    }
+
+    private void CreateNew()
+    {
+        Navigation.NavigateTo("/software/create");
+    }
+
+    private void Edit(int id)
+    {
+        Navigation.NavigateTo($"/software/edit/{id}");
+    }
+
+    private async Task Delete(int id)
+    {
+        var item = await DbContext.Software.FindAsync(id);
+        if (item != null)
+        {
+            DbContext.Software.Remove(item);
+            await DbContext.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+}
