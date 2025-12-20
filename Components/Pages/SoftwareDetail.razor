@@ -2,6 +2,7 @@
 @using Microsoft.EntityFrameworkCore
 @using SBOMViewer.Data
 @using System.Text.Json
+@using System.Text.Json.Serialization
 @inject ApplicationDbContext DbContext
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
@@ -164,11 +165,25 @@ else
         // Detect format and process
         if (root.TryGetProperty("bomFormat", out var bomFormat) && bomFormat.GetString() == "CycloneDX")
         {
-            await ProcessCycloneDX(root);
+            var sbom = JsonSerializer.Deserialize<CycloneDxSbom>(jsonContent, new JsonSerializerOptions 
+            { 
+                PropertyNameCaseInsensitive = true 
+            });
+            if (sbom != null)
+            {
+                await ProcessCycloneDX(sbom);
+            }
         }
         else if (root.TryGetProperty("spdxVersion", out _))
         {
-            await ProcessSPDX(root);
+            var sbom = JsonSerializer.Deserialize<SpdxSbom>(jsonContent, new JsonSerializerOptions 
+            { 
+                PropertyNameCaseInsensitive = true 
+            });
+            if (sbom != null)
+            {
+                await ProcessSPDX(sbom);
+            }
         }
         else
         {
@@ -176,9 +191,9 @@ else
         }
     }
 
-    private async Task ProcessCycloneDX(JsonElement root)
+    private async Task ProcessCycloneDX(CycloneDxSbom sbom)
     {
-        if (!root.TryGetProperty("components", out var components))
+        if (sbom.Components == null || !sbom.Components.Any())
         {
             return;
         }
@@ -191,15 +206,17 @@ else
 
         var newSoftwareDeps = new List<SoftwareDependency>();
 
-        foreach (var component in components.EnumerateArray())
+        foreach (var component in sbom.Components)
         {
-            var name = component.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
-            var version = component.TryGetProperty("version", out var versionEl) ? versionEl.GetString() : "unknown";
-            var description = component.TryGetProperty("description", out var descEl) ? descEl.GetString() : null;
-
-            if (!string.IsNullOrEmpty(name))
+            if (!string.IsNullOrEmpty(component.Name))
             {
-                ProcessDependency(name, version ?? "unknown", description, allDependencies, existingSoftwareDeps, newSoftwareDeps);
+                ProcessDependency(
+                    component.Name, 
+                    component.Version ?? "unknown", 
+                    component.Description, 
+                    allDependencies, 
+                    existingSoftwareDeps, 
+                    newSoftwareDeps);
             }
         }
 
@@ -210,9 +227,9 @@ else
         }
     }
 
-    private async Task ProcessSPDX(JsonElement root)
+    private async Task ProcessSPDX(SpdxSbom sbom)
     {
-        if (!root.TryGetProperty("packages", out var packages))
+        if (sbom.Packages == null || !sbom.Packages.Any())
         {
             return;
         }
@@ -225,15 +242,17 @@ else
 
         var newSoftwareDeps = new List<SoftwareDependency>();
 
-        foreach (var package in packages.EnumerateArray())
+        foreach (var package in sbom.Packages)
         {
-            var name = package.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
-            var version = package.TryGetProperty("versionInfo", out var versionEl) ? versionEl.GetString() : "unknown";
-            var description = package.TryGetProperty("description", out var descEl) ? descEl.GetString() : null;
-
-            if (!string.IsNullOrEmpty(name))
+            if (!string.IsNullOrEmpty(package.Name))
             {
-                ProcessDependency(name, version ?? "unknown", description, allDependencies, existingSoftwareDeps, newSoftwareDeps);
+                ProcessDependency(
+                    package.Name, 
+                    package.VersionInfo ?? "unknown", 
+                    package.Description, 
+                    allDependencies, 
+                    existingSoftwareDeps, 
+                    newSoftwareDeps);
             }
         }
 
@@ -286,5 +305,51 @@ else
             await DbContext.SaveChangesAsync();
             await LoadData();
         }
+    }
+
+    // SBOM Model Classes
+    private class CycloneDxSbom
+    {
+        [JsonPropertyName("bomFormat")]
+        public string? BomFormat { get; set; }
+        
+        [JsonPropertyName("specVersion")]
+        public string? SpecVersion { get; set; }
+        
+        [JsonPropertyName("components")]
+        public List<CycloneDxComponent>? Components { get; set; }
+    }
+
+    private class CycloneDxComponent
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+        
+        [JsonPropertyName("version")]
+        public string? Version { get; set; }
+        
+        [JsonPropertyName("description")]
+        public string? Description { get; set; }
+    }
+
+    private class SpdxSbom
+    {
+        [JsonPropertyName("spdxVersion")]
+        public string? SpdxVersion { get; set; }
+        
+        [JsonPropertyName("packages")]
+        public List<SpdxPackage>? Packages { get; set; }
+    }
+
+    private class SpdxPackage
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+        
+        [JsonPropertyName("versionInfo")]
+        public string? VersionInfo { get; set; }
+        
+        [JsonPropertyName("description")]
+        public string? Description { get; set; }
     }
 }
