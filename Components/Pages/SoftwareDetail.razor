@@ -273,12 +273,34 @@ else
         return newSoftwareDeps.Count;
     }
 
+    /// <summary>
+    /// Extracts the ecosystem from a Package URL (purl).
+    /// purl format: pkg:&lt;ecosystem&gt;/[namespace/]name[@version]
+    /// e.g. "pkg:npm/lodash@4.17.21" → "npm"
+    /// </summary>
+    private static string? ExtractEcosystemFromPurl(string? packageUrl)
+    {
+        if (string.IsNullOrEmpty(packageUrl))
+            return null;
+
+        // Strip the "pkg:" prefix
+        var withoutScheme = packageUrl.StartsWith("pkg:", StringComparison.OrdinalIgnoreCase)
+            ? packageUrl[4..]
+            : packageUrl;
+
+        // The ecosystem is everything up to the first '/'
+        var slashIndex = withoutScheme.IndexOf('/');
+        return slashIndex > 0 ? withoutScheme[..slashIndex] : null;
+    }
+
     private void ProcessDependency(string name, string version, string? description, 
         string? type, string? packageUrl,
         Dictionary<string, Dependency> allDependencies, 
         List<SoftwareDependency> existingSoftwareDeps, 
         List<SoftwareDependency> newSoftwareDeps)
     {
+        var ecosystem = ExtractEcosystemFromPurl(packageUrl);
+
         // Find or create dependency
         if (!allDependencies.TryGetValue(name, out var dependency))
         {
@@ -287,6 +309,7 @@ else
                 Name = name,
                 Description = description,
                 Type = type,
+                Ecosystem = ecosystem,
                 PackageUrl = packageUrl
             };
             DbContext.Dependencies.Add(dependency);
@@ -294,9 +317,11 @@ else
         }
         else
         {
-            // Update type and purl if not yet set
+            // Update type, ecosystem and purl if not yet set
             if (dependency.Type == null && type != null)
                 dependency.Type = type;
+            if (dependency.Ecosystem == null && ecosystem != null)
+                dependency.Ecosystem = ecosystem;
             if (dependency.PackageUrl == null && packageUrl != null)
                 dependency.PackageUrl = packageUrl;
         }

@@ -16,6 +16,9 @@ public class Dependency
     [StringLength(100)]
     public string? Type { get; set; }
 
+    [StringLength(100)]
+    public string? Ecosystem { get; set; }
+
     [StringLength(1000)]
     public string? PackageUrl { get; set; }
 

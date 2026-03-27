@@ -25,6 +25,7 @@ else
             <tr>
                 <th>Name</th>
                 <th>Type</th>
+                <th>Ecosystem</th>
                 <th>Description</th>
                 <th>Package URL</th>
                 <th>Usage Count</th>
@@ -37,6 +38,7 @@ else
                 <tr>
                     <td>@item.Name</td>
                     <td>@item.Type</td>
+                    <td>@item.Ecosystem</td>
                     <td>@item.Description</td>
                     <td>
                         @if (!string.IsNullOrEmpty(item.PackageUrl))
@@ -76,6 +78,7 @@ else
             Name = d.Name,
             Description = d.Description,
             Type = d.Type,
+            Ecosystem = d.Ecosystem,
             PackageUrl = d.PackageUrl,
             UsageCount = d.SoftwareUsages.Count
         }).ToList();
@@ -126,6 +129,7 @@ else
         public string Name { get; set; } = string.Empty;
         public string? Description { get; set; }
         public string? Type { get; set; }
+        public string? Ecosystem { get; set; }
         public string? PackageUrl { get; set; }
         public int UsageCount { get; set; }
     }

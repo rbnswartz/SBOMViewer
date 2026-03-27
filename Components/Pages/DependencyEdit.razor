@@ -28,6 +28,12 @@
     </div>
 
     <div class="mb-3">
+        <label for="ecosystem" class="form-label">Ecosystem</label>
+        <InputText id="ecosystem" class="form-control" @bind-Value="model.Ecosystem" placeholder="e.g. npm, maven, pypi, nuget" />
+        <ValidationMessage For="@(() => model.Ecosystem)" />
+    </div>
+
+    <div class="mb-3">
         <label for="description" class="form-label">Description</label>
         <InputTextArea id="description" class="form-control" @bind-Value="model.Description" rows="3" />
         <ValidationMessage For="@(() => model.Description)" />
@@ -61,6 +67,7 @@
                 model.Name = dependency.Name;
                 model.Description = dependency.Description;
                 model.Type = dependency.Type;
+                model.Ecosystem = dependency.Ecosystem;
                 model.PackageUrl = dependency.PackageUrl;
             }
         }
@@ -76,6 +83,7 @@
                 dependency.Name = model.Name;
                 dependency.Description = model.Description;
                 dependency.Type = model.Type;
+                dependency.Ecosystem = model.Ecosystem;
                 dependency.PackageUrl = model.PackageUrl;
             }
         }
@@ -86,6 +94,7 @@
                 Name = model.Name,
                 Description = model.Description,
                 Type = model.Type,
+                Ecosystem = model.Ecosystem,
                 PackageUrl = model.PackageUrl
             };
             DbContext.Dependencies.Add(dependency);
@@ -108,6 +117,9 @@
 
         [StringLength(100)]
         public string? Type { get; set; }
+
+        [StringLength(100)]
+        public string? Ecosystem { get; set; }
 
         [StringLength(500)]
         public string? Description { get; set; }
