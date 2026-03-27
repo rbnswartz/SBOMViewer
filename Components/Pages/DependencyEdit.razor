@@ -22,9 +22,21 @@
     </div>
 
     <div class="mb-3">
+        <label for="type" class="form-label">Type</label>
+        <InputText id="type" class="form-control" @bind-Value="model.Type" placeholder="e.g. library, framework, application" />
+        <ValidationMessage For="@(() => model.Type)" />
+    </div>
+
+    <div class="mb-3">
         <label for="description" class="form-label">Description</label>
         <InputTextArea id="description" class="form-control" @bind-Value="model.Description" rows="3" />
         <ValidationMessage For="@(() => model.Description)" />
+    </div>
+
+    <div class="mb-3">
+        <label for="packageUrl" class="form-label">Package URL (purl)</label>
+        <InputText id="packageUrl" class="form-control" @bind-Value="model.PackageUrl" placeholder="e.g. pkg:npm/lodash@4.17.21" />
+        <ValidationMessage For="@(() => model.PackageUrl)" />
     </div>
 
     <div>
@@ -48,6 +60,8 @@
             {
                 model.Name = dependency.Name;
                 model.Description = dependency.Description;
+                model.Type = dependency.Type;
+                model.PackageUrl = dependency.PackageUrl;
             }
         }
     }
@@ -61,6 +75,8 @@
             {
                 dependency.Name = model.Name;
                 dependency.Description = model.Description;
+                dependency.Type = model.Type;
+                dependency.PackageUrl = model.PackageUrl;
             }
         }
         else
@@ -68,7 +84,9 @@
             var dependency = new Dependency
             {
                 Name = model.Name,
-                Description = model.Description
+                Description = model.Description,
+                Type = model.Type,
+                PackageUrl = model.PackageUrl
             };
             DbContext.Dependencies.Add(dependency);
         }
@@ -88,7 +106,13 @@
         [StringLength(200)]
         public string Name { get; set; } = string.Empty;
 
+        [StringLength(100)]
+        public string? Type { get; set; }
+
         [StringLength(500)]
         public string? Description { get; set; }
+
+        [StringLength(1000)]
+        public string? PackageUrl { get; set; }
     }
 }

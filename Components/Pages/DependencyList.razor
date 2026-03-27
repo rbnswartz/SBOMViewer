@@ -24,7 +24,9 @@ else
         <thead>
             <tr>
                 <th>Name</th>
+                <th>Type</th>
                 <th>Description</th>
+                <th>Package URL</th>
                 <th>Usage Count</th>
                 <th>Actions</th>
             </tr>
@@ -34,7 +36,14 @@ else
             {
                 <tr>
                     <td>@item.Name</td>
+                    <td>@item.Type</td>
                     <td>@item.Description</td>
+                    <td>
+                        @if (!string.IsNullOrEmpty(item.PackageUrl))
+                        {
+                            <code class="text-break">@item.PackageUrl</code>
+                        }
+                    </td>
                     <td>@item.UsageCount</td>
                     <td>
                         <button class="btn btn-sm btn-primary" @onclick="() => Edit(item.Id)">Edit</button>
@@ -66,6 +75,8 @@ else
             Id = d.Id,
             Name = d.Name,
             Description = d.Description,
+            Type = d.Type,
+            PackageUrl = d.PackageUrl,
             UsageCount = d.SoftwareUsages.Count
         }).ToList();
     }
@@ -114,6 +125,8 @@ else
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
         public string? Description { get; set; }
+        public string? Type { get; set; }
+        public string? PackageUrl { get; set; }
         public int UsageCount { get; set; }
     }
 }

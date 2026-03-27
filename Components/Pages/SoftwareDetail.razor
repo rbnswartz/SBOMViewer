@@ -143,10 +143,10 @@ else
             using var reader = new StreamReader(stream);
             var content = await reader.ReadToEndAsync();
 
-            await ProcessSBOM(content);
+            var importedCount = await ProcessSBOM(content);
             
             uploadSuccess = true;
-            uploadMessage = "SBOM uploaded successfully!";
+            uploadMessage = $"SBOM uploaded successfully! {importedCount} new dependenc{(importedCount == 1 ? "y" : "ies")} imported.";
             showUpload = false;
             await LoadData();
         }
@@ -157,7 +157,7 @@ else
         }
     }
 
-    private async Task ProcessSBOM(string jsonContent)
+    private async Task<int> ProcessSBOM(string jsonContent)
     {
         using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
@@ -171,7 +171,7 @@ else
             });
             if (sbom != null)
             {
-                await ProcessCycloneDX(sbom);
+                return await ProcessCycloneDX(sbom);
             }
         }
         else if (root.TryGetProperty("spdxVersion", out _))
@@ -182,20 +182,22 @@ else
             });
             if (sbom != null)
             {
-                await ProcessSPDX(sbom);
+                return await ProcessSPDX(sbom);
             }
         }
         else
         {
             throw new Exception("Unknown SBOM format. Supported formats are CycloneDX and SPDX.");
         }
+
+        return 0;
     }
 
-    private async Task ProcessCycloneDX(CycloneDxSbom sbom)
+    private async Task<int> ProcessCycloneDX(CycloneDxSbom sbom)
     {
         if (sbom.Components == null || !sbom.Components.Any())
         {
-            return;
+            return 0;
         }
 
         // Load all dependencies and existing software dependencies upfront
@@ -213,7 +215,9 @@ else
                 ProcessDependency(
                     component.Name, 
                     component.Version ?? "unknown", 
-                    component.Description, 
+                    component.Description,
+                    component.Type,
+                    component.Purl,
                     allDependencies, 
                     existingSoftwareDeps, 
                     newSoftwareDeps);
@@ -225,13 +229,15 @@ else
             DbContext.SoftwareDependencies.AddRange(newSoftwareDeps);
             await DbContext.SaveChangesAsync();
         }
+
+        return newSoftwareDeps.Count;
     }
 
-    private async Task ProcessSPDX(SpdxSbom sbom)
+    private async Task<int> ProcessSPDX(SpdxSbom sbom)
     {
         if (sbom.Packages == null || !sbom.Packages.Any())
         {
-            return;
+            return 0;
         }
 
         // Load all dependencies and existing software dependencies upfront
@@ -249,7 +255,9 @@ else
                 ProcessDependency(
                     package.Name, 
                     package.VersionInfo ?? "unknown", 
-                    package.Description, 
+                    package.Description,
+                    null,
+                    null,
                     allDependencies, 
                     existingSoftwareDeps, 
                     newSoftwareDeps);
@@ -261,9 +269,12 @@ else
             DbContext.SoftwareDependencies.AddRange(newSoftwareDeps);
             await DbContext.SaveChangesAsync();
         }
+
+        return newSoftwareDeps.Count;
     }
 
     private void ProcessDependency(string name, string version, string? description, 
+        string? type, string? packageUrl,
         Dictionary<string, Dependency> allDependencies, 
         List<SoftwareDependency> existingSoftwareDeps, 
         List<SoftwareDependency> newSoftwareDeps)
@@ -274,10 +285,20 @@ else
             dependency = new Dependency
             {
                 Name = name,
-                Description = description
+                Description = description,
+                Type = type,
+                PackageUrl = packageUrl
             };
             DbContext.Dependencies.Add(dependency);
             allDependencies[name] = dependency;
+        }
+        else
+        {
+            // Update type and purl if not yet set
+            if (dependency.Type == null && type != null)
+                dependency.Type = type;
+            if (dependency.PackageUrl == null && packageUrl != null)
+                dependency.PackageUrl = packageUrl;
         }
 
         // Check if this dependency version already exists for this software
@@ -322,6 +343,9 @@ else
 
     private class CycloneDxComponent
     {
+        [JsonPropertyName("type")]
+        public string? Type { get; set; }
+
         [JsonPropertyName("name")]
         public string? Name { get; set; }
         
@@ -330,6 +354,9 @@ else
         
         [JsonPropertyName("description")]
         public string? Description { get; set; }
+
+        [JsonPropertyName("purl")]
+        public string? Purl { get; set; }
     }
 
     private class SpdxSbom
