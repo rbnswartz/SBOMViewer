@@ -61,6 +61,7 @@ else
                 <tr>
                     <th>Name</th>
                     <th>Version</th>
+                    <th>Ecosystem</th>
                     <th>Description</th>
                     <th>Added Date</th>
                     <th>Actions</th>
@@ -70,8 +71,21 @@ else
                 @foreach (var item in dependencies)
                 {
                     <tr>
-                        <td>@item.Dependency.Name</td>
+                        <td>
+                            @{
+                                var registryUrl = PurlHelper.GetRegistryUrl(item.Dependency.PackageUrl);
+                            }
+                            @if (registryUrl != null)
+                            {
+                                <a href="@registryUrl" target="_blank" rel="noopener noreferrer">@item.Dependency.Name</a>
+                            }
+                            else
+                            {
+                                @item.Dependency.Name
+                            }
+                        </td>
                         <td>@item.Version</td>
+                        <td>@item.Dependency.Ecosystem</td>
                         <td>@item.Dependency.Description</td>
                         <td>@item.AddedDate.ToLocalTime().ToString("g")</td>
                         <td>
@@ -143,10 +157,10 @@ else
             using var reader = new StreamReader(stream);
             var content = await reader.ReadToEndAsync();
 
-            await ProcessSBOM(content);
+            var importedCount = await ProcessSBOM(content);
             
             uploadSuccess = true;
-            uploadMessage = "SBOM uploaded successfully!";
+            uploadMessage = $"SBOM uploaded successfully! {importedCount} new dependenc{(importedCount == 1 ? "y" : "ies")} imported.";
             showUpload = false;
             await LoadData();
         }
@@ -157,7 +171,7 @@ else
         }
     }
 
-    private async Task ProcessSBOM(string jsonContent)
+    private async Task<int> ProcessSBOM(string jsonContent)
     {
         using var doc = JsonDocument.Parse(jsonContent);
         var root = doc.RootElement;
@@ -171,7 +185,7 @@ else
             });
             if (sbom != null)
             {
-                await ProcessCycloneDX(sbom);
+                return await ProcessCycloneDX(sbom);
             }
         }
         else if (root.TryGetProperty("spdxVersion", out _))
@@ -182,20 +196,22 @@ else
             });
             if (sbom != null)
             {
-                await ProcessSPDX(sbom);
+                return await ProcessSPDX(sbom);
             }
         }
         else
         {
             throw new Exception("Unknown SBOM format. Supported formats are CycloneDX and SPDX.");
         }
+
+        return 0;
     }
 
-    private async Task ProcessCycloneDX(CycloneDxSbom sbom)
+    private async Task<int> ProcessCycloneDX(CycloneDxSbom sbom)
     {
         if (sbom.Components == null || !sbom.Components.Any())
         {
-            return;
+            return 0;
         }
 
         // Load all dependencies and existing software dependencies upfront
@@ -213,7 +229,9 @@ else
                 ProcessDependency(
                     component.Name, 
                     component.Version ?? "unknown", 
-                    component.Description, 
+                    component.Description,
+                    component.Type,
+                    component.Purl,
                     allDependencies, 
                     existingSoftwareDeps, 
                     newSoftwareDeps);
@@ -225,13 +243,15 @@ else
             DbContext.SoftwareDependencies.AddRange(newSoftwareDeps);
             await DbContext.SaveChangesAsync();
         }
+
+        return newSoftwareDeps.Count;
     }
 
-    private async Task ProcessSPDX(SpdxSbom sbom)
+    private async Task<int> ProcessSPDX(SpdxSbom sbom)
     {
         if (sbom.Packages == null || !sbom.Packages.Any())
         {
-            return;
+            return 0;
         }
 
         // Load all dependencies and existing software dependencies upfront
@@ -249,7 +269,9 @@ else
                 ProcessDependency(
                     package.Name, 
                     package.VersionInfo ?? "unknown", 
-                    package.Description, 
+                    package.Description,
+                    package.PrimaryPackagePurpose?.ToLowerInvariant(),
+                    package.Purl,
                     allDependencies, 
                     existingSoftwareDeps, 
                     newSoftwareDeps);
@@ -261,28 +283,69 @@ else
             DbContext.SoftwareDependencies.AddRange(newSoftwareDeps);
             await DbContext.SaveChangesAsync();
         }
+
+        return newSoftwareDeps.Count;
+    }
+
+    /// <summary>
+    /// Extracts the ecosystem from a Package URL (purl).
+    /// purl format: pkg:&lt;ecosystem&gt;/[namespace/]name[@version]
+    /// e.g. "pkg:npm/lodash@4.17.21" → "npm"
+    /// </summary>
+    private static string? ExtractEcosystemFromPurl(string? packageUrl)
+    {
+        if (string.IsNullOrEmpty(packageUrl))
+            return null;
+
+        // Strip the "pkg:" prefix
+        var withoutScheme = packageUrl.StartsWith("pkg:", StringComparison.OrdinalIgnoreCase)
+            ? packageUrl[4..]
+            : packageUrl;
+
+        // The ecosystem is everything up to the first '/'
+        var slashIndex = withoutScheme.IndexOf('/');
+        return slashIndex > 0 ? withoutScheme[..slashIndex] : null;
     }
 
     private void ProcessDependency(string name, string version, string? description, 
+        string? type, string? packageUrl,
         Dictionary<string, Dependency> allDependencies, 
         List<SoftwareDependency> existingSoftwareDeps, 
         List<SoftwareDependency> newSoftwareDeps)
     {
+        var ecosystem = ExtractEcosystemFromPurl(packageUrl);
+
         // Find or create dependency
         if (!allDependencies.TryGetValue(name, out var dependency))
         {
             dependency = new Dependency
             {
                 Name = name,
-                Description = description
+                Description = description,
+                Type = type,
+                Ecosystem = ecosystem,
+                PackageUrl = packageUrl
             };
             DbContext.Dependencies.Add(dependency);
             allDependencies[name] = dependency;
         }
+        else
+        {
+            // Update type, ecosystem and purl if not yet set
+            if (dependency.Type == null && type != null)
+                dependency.Type = type;
+            if (dependency.Ecosystem == null && ecosystem != null)
+                dependency.Ecosystem = ecosystem;
+            if (dependency.PackageUrl == null && packageUrl != null)
+                dependency.PackageUrl = packageUrl;
+        }
 
-        // Check if this dependency version already exists for this software
-        var exists = existingSoftwareDeps.Any(sd => sd.DependencyId == dependency.Id && sd.Version == version) ||
-                     newSoftwareDeps.Any(sd => sd.Dependency == dependency && sd.Version == version);
+        // Check if this dependency is already linked to this software.
+        // The unique constraint is on (SoftwareId, DependencyId) only, so version is not part of the check.
+        // existingSoftwareDeps are DB-loaded objects compared by ID; newSoftwareDeps are in-memory objects
+        // compared by reference (new dependencies have Id=0 until saved, so reference equality is used there).
+        var exists = existingSoftwareDeps.Any(sd => sd.DependencyId == dependency.Id) ||
+                     newSoftwareDeps.Any(sd => sd.Dependency == dependency);
 
         if (!exists)
         {
@@ -322,6 +385,9 @@ else
 
     private class CycloneDxComponent
     {
+        [JsonPropertyName("type")]
+        public string? Type { get; set; }
+
         [JsonPropertyName("name")]
         public string? Name { get; set; }
         
@@ -330,6 +396,9 @@ else
         
         [JsonPropertyName("description")]
         public string? Description { get; set; }
+
+        [JsonPropertyName("purl")]
+        public string? Purl { get; set; }
     }
 
     private class SpdxSbom
@@ -351,5 +420,28 @@ else
         
         [JsonPropertyName("description")]
         public string? Description { get; set; }
+
+        [JsonPropertyName("primaryPackagePurpose")]
+        public string? PrimaryPackagePurpose { get; set; }
+
+        [JsonPropertyName("externalRefs")]
+        public List<SpdxExternalRef>? ExternalRefs { get; set; }
+
+        /// <summary>Returns the purl from externalRefs if present, otherwise null.</summary>
+        public string? Purl => ExternalRefs?
+            .FirstOrDefault(r => string.Equals(r.ReferenceType, "purl", StringComparison.OrdinalIgnoreCase))
+            ?.ReferenceLocator;
+    }
+
+    private class SpdxExternalRef
+    {
+        [JsonPropertyName("referenceCategory")]
+        public string? ReferenceCategory { get; set; }
+
+        [JsonPropertyName("referenceType")]
+        public string? ReferenceType { get; set; }
+
+        [JsonPropertyName("referenceLocator")]
+        public string? ReferenceLocator { get; set; }
     }
 }

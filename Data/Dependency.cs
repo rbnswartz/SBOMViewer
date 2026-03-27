@@ -13,5 +13,14 @@ public class Dependency
     [StringLength(500)]
     public string? Description { get; set; }
 
+    [StringLength(100)]
+    public string? Type { get; set; }
+
+    [StringLength(100)]
+    public string? Ecosystem { get; set; }
+
+    [StringLength(1000)]
+    public string? PackageUrl { get; set; }
+
     public ICollection<SoftwareDependency> SoftwareUsages { get; set; } = new List<SoftwareDependency>();
 }

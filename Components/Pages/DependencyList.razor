@@ -24,7 +24,10 @@ else
         <thead>
             <tr>
                 <th>Name</th>
+                <th>Type</th>
+                <th>Ecosystem</th>
                 <th>Description</th>
+                <th>Registry</th>
                 <th>Usage Count</th>
                 <th>Actions</th>
             </tr>
@@ -34,7 +37,22 @@ else
             {
                 <tr>
                     <td>@item.Name</td>
+                    <td>@item.Type</td>
+                    <td>@item.Ecosystem</td>
                     <td>@item.Description</td>
+                    <td>
+                        @{
+                            var registryUrl = PurlHelper.GetRegistryUrl(item.PackageUrl);
+                        }
+                        @if (registryUrl != null)
+                        {
+                            <a href="@registryUrl" target="_blank" rel="noopener noreferrer">@PurlHelper.GetRegistryLabel(item.PackageUrl)</a>
+                        }
+                        else if (!string.IsNullOrEmpty(item.PackageUrl))
+                        {
+                            <code class="text-break">@item.PackageUrl</code>
+                        }
+                    </td>
                     <td>@item.UsageCount</td>
                     <td>
                         <button class="btn btn-sm btn-primary" @onclick="() => Edit(item.Id)">Edit</button>
@@ -66,6 +84,9 @@ else
             Id = d.Id,
             Name = d.Name,
             Description = d.Description,
+            Type = d.Type,
+            Ecosystem = d.Ecosystem,
+            PackageUrl = d.PackageUrl,
             UsageCount = d.SoftwareUsages.Count
         }).ToList();
     }
@@ -114,6 +135,9 @@ else
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
         public string? Description { get; set; }
+        public string? Type { get; set; }
+        public string? Ecosystem { get; set; }
+        public string? PackageUrl { get; set; }
         public int UsageCount { get; set; }
     }
 }

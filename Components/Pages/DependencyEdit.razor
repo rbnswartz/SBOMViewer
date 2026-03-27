@@ -22,9 +22,27 @@
     </div>
 
     <div class="mb-3">
+        <label for="type" class="form-label">Type</label>
+        <InputText id="type" class="form-control" @bind-Value="model.Type" placeholder="e.g. library, framework, application" />
+        <ValidationMessage For="@(() => model.Type)" />
+    </div>
+
+    <div class="mb-3">
+        <label for="ecosystem" class="form-label">Ecosystem</label>
+        <InputText id="ecosystem" class="form-control" @bind-Value="model.Ecosystem" placeholder="e.g. npm, maven, pypi, nuget" />
+        <ValidationMessage For="@(() => model.Ecosystem)" />
+    </div>
+
+    <div class="mb-3">
         <label for="description" class="form-label">Description</label>
         <InputTextArea id="description" class="form-control" @bind-Value="model.Description" rows="3" />
         <ValidationMessage For="@(() => model.Description)" />
+    </div>
+
+    <div class="mb-3">
+        <label for="packageUrl" class="form-label">Package URL (purl)</label>
+        <InputText id="packageUrl" class="form-control" @bind-Value="model.PackageUrl" placeholder="e.g. pkg:npm/lodash@4.17.21" />
+        <ValidationMessage For="@(() => model.PackageUrl)" />
     </div>
 
     <div>
@@ -48,6 +66,9 @@
             {
                 model.Name = dependency.Name;
                 model.Description = dependency.Description;
+                model.Type = dependency.Type;
+                model.Ecosystem = dependency.Ecosystem;
+                model.PackageUrl = dependency.PackageUrl;
             }
         }
     }
@@ -61,6 +82,9 @@
             {
                 dependency.Name = model.Name;
                 dependency.Description = model.Description;
+                dependency.Type = model.Type;
+                dependency.Ecosystem = model.Ecosystem;
+                dependency.PackageUrl = model.PackageUrl;
             }
         }
         else
@@ -68,7 +92,10 @@
             var dependency = new Dependency
             {
                 Name = model.Name,
-                Description = model.Description
+                Description = model.Description,
+                Type = model.Type,
+                Ecosystem = model.Ecosystem,
+                PackageUrl = model.PackageUrl
             };
             DbContext.Dependencies.Add(dependency);
         }
@@ -88,7 +115,16 @@
         [StringLength(200)]
         public string Name { get; set; } = string.Empty;
 
+        [StringLength(100)]
+        public string? Type { get; set; }
+
+        [StringLength(100)]
+        public string? Ecosystem { get; set; }
+
         [StringLength(500)]
         public string? Description { get; set; }
+
+        [StringLength(1000)]
+        public string? PackageUrl { get; set; }
     }
 }
