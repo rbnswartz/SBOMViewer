@@ -1,0 +1,153 @@
+@page "/dependencies/{id:int}"
+@using Microsoft.EntityFrameworkCore
+@using SBOMViewer.Data
+@inject ApplicationDbContext DbContext
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>@(dependency?.Name ?? "Dependency")</PageTitle>
+
+@if (dependency == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <h1>@dependency.Name</h1>
+
+    <div class="mb-3">
+        <button class="btn btn-primary" @onclick="@(() => Navigation.NavigateTo($"/dependencies/edit/{Id}"))">Edit</button>
+        <button class="btn btn-secondary" @onclick="@(() => Navigation.NavigateTo("/dependencies"))">Back to List</button>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Details</h5>
+            <dl class="row">
+                <dt class="col-sm-3">Name</dt>
+                <dd class="col-sm-9">@dependency.Name</dd>
+
+                @if (!string.IsNullOrEmpty(dependency.Type))
+                {
+                    <dt class="col-sm-3">Type</dt>
+                    <dd class="col-sm-9">@dependency.Type</dd>
+                }
+
+                @if (!string.IsNullOrEmpty(dependency.Ecosystem))
+                {
+                    <dt class="col-sm-3">Ecosystem</dt>
+                    <dd class="col-sm-9">@dependency.Ecosystem</dd>
+                }
+
+                @if (!string.IsNullOrEmpty(dependency.Description))
+                {
+                    <dt class="col-sm-3">Description</dt>
+                    <dd class="col-sm-9">@dependency.Description</dd>
+                }
+
+                @if (!string.IsNullOrEmpty(dependency.PackageUrl))
+                {
+                    <dt class="col-sm-3">Registry</dt>
+                    <dd class="col-sm-9">
+                        @{
+                            var registryUrl = PurlHelper.GetRegistryUrl(dependency.PackageUrl);
+                        }
+                        @if (registryUrl != null)
+                        {
+                            <a href="@registryUrl" target="_blank" rel="noopener noreferrer">@PurlHelper.GetRegistryLabel(dependency.PackageUrl)</a>
+                        }
+                        else
+                        {
+                            <code class="text-break">@dependency.PackageUrl</code>
+                        }
+                    </dd>
+                }
+            </dl>
+        </div>
+    </div>
+
+    <h2>Used By</h2>
+    @if (usages == null)
+    {
+        <p><em>Loading usages...</em></p>
+    }
+    else if (!usages.Any())
+    {
+        <p><em>No software uses this dependency.</em></p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Software</th>
+                    <th>Version</th>
+                    <th>Added Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var usage in usages)
+                {
+                    <tr>
+                        <td>
+                            <a href="/software/@usage.SoftwareId">@usage.SoftwareName</a>
+                        </td>
+                        <td>@usage.Version</td>
+                        <td>@usage.AddedDate.ToLocalTime().ToString("g")</td>
+                        <td>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => ViewSoftware(usage.SoftwareId)">View Software</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private Dependency? dependency;
+    private List<UsageViewModel>? usages;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        dependency = await DbContext.Dependencies
+            .Include(d => d.SoftwareUsages)
+            .ThenInclude(sd => sd.Software)
+            .FirstOrDefaultAsync(d => d.Id == Id);
+
+        if (dependency != null)
+        {
+            usages = dependency.SoftwareUsages
+                .OrderBy(sd => sd.Software.Name)
+                .Select(sd => new UsageViewModel
+                {
+                    SoftwareId = sd.SoftwareId,
+                    SoftwareName = sd.Software.Name,
+                    Version = sd.Version,
+                    AddedDate = sd.AddedDate
+                }).ToList();
+        }
+    }
+
+    private void ViewSoftware(int softwareId)
+    {
+        Navigation.NavigateTo($"/software/{softwareId}");
+    }
+
+    private class UsageViewModel
+    {
+        public int SoftwareId { get; set; }
+        public string SoftwareName { get; set; } = string.Empty;
+        public string Version { get; set; } = string.Empty;
+        public DateTime AddedDate { get; set; }
+    }
+}

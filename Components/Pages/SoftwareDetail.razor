@@ -63,6 +63,7 @@ else
                     <th>Version</th>
                     <th>Ecosystem</th>
                     <th>Description</th>
+                    <th>Registry</th>
                     <th>Added Date</th>
                     <th>Actions</th>
                 </tr>
@@ -72,21 +73,20 @@ else
                 {
                     <tr>
                         <td>
+                            <a href="/dependencies/@item.Dependency.Id">@item.Dependency.Name</a>
+                        </td>
+                        <td>@item.Version</td>
+                        <td>@item.Dependency.Ecosystem</td>
+                        <td>@item.Dependency.Description</td>
+                        <td>
                             @{
                                 var registryUrl = PurlHelper.GetRegistryUrl(item.Dependency.PackageUrl);
                             }
                             @if (registryUrl != null)
                             {
-                                <a href="@registryUrl" target="_blank" rel="noopener noreferrer">@item.Dependency.Name</a>
-                            }
-                            else
-                            {
-                                @item.Dependency.Name
+                                <a href="@registryUrl" target="_blank" rel="noopener noreferrer">@PurlHelper.GetRegistryLabel(item.Dependency.PackageUrl)</a>
                             }
                         </td>
-                        <td>@item.Version</td>
-                        <td>@item.Dependency.Ecosystem</td>
-                        <td>@item.Dependency.Description</td>
                         <td>@item.AddedDate.ToLocalTime().ToString("g")</td>
                         <td>
                             <button class="btn btn-sm btn-danger" @onclick="() => RemoveDependency(item.Id)">Remove</button>
