@@ -14,58 +14,93 @@
     <button class="btn btn-primary" @onclick="CreateNew">Create New</button>
 </p>
 
+<div class="row mb-3 g-2">
+    <div class="col-sm-5">
+        <input type="text" class="form-control" placeholder="Search by name…" @bind="searchName" @bind:event="oninput" />
+    </div>
+    <div class="col-sm-4">
+        <select class="form-select" @bind="selectedEcosystem">
+            <option value="">All Ecosystems</option>
+            @foreach (var eco in ecosystems)
+            {
+                <option value="@eco">@eco</option>
+            }
+        </select>
+    </div>
+</div>
+
 @if (dependencies == null)
 {
     <p><em>Loading...</em></p>
 }
 else
 {
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Ecosystem</th>
-                <th>Description</th>
-                <th>Registry</th>
-                <th>Usage Count</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var item in dependencies)
-            {
+    var filtered = FilteredDependencies;
+    @if (!filtered.Any())
+    {
+        <p><em>No dependencies match the current filters.</em></p>
+    }
+    else
+    {
+        <table class="table table-hover">
+            <thead>
                 <tr>
-                    <td>@item.Name</td>
-                    <td>@item.Type</td>
-                    <td>@item.Ecosystem</td>
-                    <td>@item.Description</td>
-                    <td>
-                        @{
-                            var registryUrl = PurlHelper.GetRegistryUrl(item.PackageUrl);
-                        }
-                        @if (registryUrl != null)
-                        {
-                            <a href="@registryUrl" target="_blank" rel="noopener noreferrer">@PurlHelper.GetRegistryLabel(item.PackageUrl)</a>
-                        }
-                        else if (!string.IsNullOrEmpty(item.PackageUrl))
-                        {
-                            <code class="text-break">@item.PackageUrl</code>
-                        }
-                    </td>
-                    <td>@item.UsageCount</td>
-                    <td>
-                        <button class="btn btn-sm btn-primary" @onclick="() => Edit(item.Id)">Edit</button>
-                        <button class="btn btn-sm btn-danger" @onclick="() => Delete(item.Id)">Delete</button>
-                    </td>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Ecosystem</th>
+                    <th>Description</th>
+                    <th>Registry</th>
+                    <th>Usage Count</th>
+                    <th>Actions</th>
                 </tr>
-            }
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                @foreach (var item in filtered)
+                {
+                    <tr>
+                        <td>
+                            <a href="/dependencies/@item.Id">@item.Name</a>
+                        </td>
+                        <td>@item.Type</td>
+                        <td>@item.Ecosystem</td>
+                        <td>@item.Description</td>
+                        <td>
+                            @{
+                                var registryUrl = PurlHelper.GetRegistryUrl(item.PackageUrl);
+                            }
+                            @if (registryUrl != null)
+                            {
+                                <a href="@registryUrl" target="_blank" rel="noopener noreferrer">@PurlHelper.GetRegistryLabel(item.PackageUrl)</a>
+                            }
+                            else if (!string.IsNullOrEmpty(item.PackageUrl))
+                            {
+                                <code class="text-break">@item.PackageUrl</code>
+                            }
+                        </td>
+                        <td>@item.UsageCount</td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" @onclick="() => Edit(item.Id)">Edit</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => Delete(item.Id)">Delete</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
 }
 
 @code {
     private List<DependencyViewModel>? dependencies;
+    private List<string> ecosystems = new();
+    private string searchName = string.Empty;
+    private string selectedEcosystem = string.Empty;
+
+    private IEnumerable<DependencyViewModel> FilteredDependencies =>
+        (dependencies ?? Enumerable.Empty<DependencyViewModel>())
+            .Where(d => string.IsNullOrEmpty(searchName) ||
+                        d.Name.Contains(searchName, StringComparison.OrdinalIgnoreCase))
+            .Where(d => string.IsNullOrEmpty(selectedEcosystem) ||
+                        string.Equals(d.Ecosystem, selectedEcosystem, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync()
     {
@@ -89,6 +124,13 @@ else
             PackageUrl = d.PackageUrl,
             UsageCount = d.SoftwareUsages.Count
         }).ToList();
+
+        ecosystems = deps
+            .Select(d => d.Ecosystem)
+            .OfType<string>()
+            .Distinct()
+            .Order()
+            .ToList();
     }
 
     private void CreateNew()
