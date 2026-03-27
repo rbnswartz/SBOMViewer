@@ -301,9 +301,12 @@ else
                 dependency.PackageUrl = packageUrl;
         }
 
-        // Check if this dependency version already exists for this software
-        var exists = existingSoftwareDeps.Any(sd => sd.DependencyId == dependency.Id && sd.Version == version) ||
-                     newSoftwareDeps.Any(sd => sd.Dependency == dependency && sd.Version == version);
+        // Check if this dependency is already linked to this software.
+        // The unique constraint is on (SoftwareId, DependencyId) only, so version is not part of the check.
+        // existingSoftwareDeps are DB-loaded objects compared by ID; newSoftwareDeps are in-memory objects
+        // compared by reference (new dependencies have Id=0 until saved, so reference equality is used there).
+        var exists = existingSoftwareDeps.Any(sd => sd.DependencyId == dependency.Id) ||
+                     newSoftwareDeps.Any(sd => sd.Dependency == dependency);
 
         if (!exists)
         {
