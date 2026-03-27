@@ -90,7 +90,9 @@ else
                 @foreach (var usage in usages)
                 {
                     <tr>
-                        <td>@usage.SoftwareName</td>
+                        <td>
+                            <a href="/software/@usage.SoftwareId">@usage.SoftwareName</a>
+                        </td>
                         <td>@usage.Version</td>
                         <td>@usage.AddedDate.ToLocalTime().ToString("g")</td>
                         <td>
