@@ -27,7 +27,7 @@ else
                 <th>Type</th>
                 <th>Ecosystem</th>
                 <th>Description</th>
-                <th>Package URL</th>
+                <th>Registry</th>
                 <th>Usage Count</th>
                 <th>Actions</th>
             </tr>
@@ -41,7 +41,14 @@ else
                     <td>@item.Ecosystem</td>
                     <td>@item.Description</td>
                     <td>
-                        @if (!string.IsNullOrEmpty(item.PackageUrl))
+                        @{
+                            var registryUrl = PurlHelper.GetRegistryUrl(item.PackageUrl);
+                        }
+                        @if (registryUrl != null)
+                        {
+                            <a href="@registryUrl" target="_blank" rel="noopener noreferrer">@PurlHelper.GetRegistryLabel(item.PackageUrl)</a>
+                        }
+                        else if (!string.IsNullOrEmpty(item.PackageUrl))
                         {
                             <code class="text-break">@item.PackageUrl</code>
                         }

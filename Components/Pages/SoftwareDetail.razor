@@ -71,7 +71,19 @@ else
                 @foreach (var item in dependencies)
                 {
                     <tr>
-                        <td>@item.Dependency.Name</td>
+                        <td>
+                            @{
+                                var registryUrl = PurlHelper.GetRegistryUrl(item.Dependency.PackageUrl);
+                            }
+                            @if (registryUrl != null)
+                            {
+                                <a href="@registryUrl" target="_blank" rel="noopener noreferrer">@item.Dependency.Name</a>
+                            }
+                            else
+                            {
+                                @item.Dependency.Name
+                            }
+                        </td>
                         <td>@item.Version</td>
                         <td>@item.Dependency.Ecosystem</td>
                         <td>@item.Dependency.Description</td>
