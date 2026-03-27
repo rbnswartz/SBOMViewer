@@ -61,6 +61,7 @@ else
                 <tr>
                     <th>Name</th>
                     <th>Version</th>
+                    <th>Ecosystem</th>
                     <th>Description</th>
                     <th>Added Date</th>
                     <th>Actions</th>
@@ -72,6 +73,7 @@ else
                     <tr>
                         <td>@item.Dependency.Name</td>
                         <td>@item.Version</td>
+                        <td>@item.Dependency.Ecosystem</td>
                         <td>@item.Dependency.Description</td>
                         <td>@item.AddedDate.ToLocalTime().ToString("g")</td>
                         <td>
@@ -256,8 +258,8 @@ else
                     package.Name, 
                     package.VersionInfo ?? "unknown", 
                     package.Description,
-                    null,
-                    null,
+                    package.PrimaryPackagePurpose?.ToLowerInvariant(),
+                    package.Purl,
                     allDependencies, 
                     existingSoftwareDeps, 
                     newSoftwareDeps);
@@ -406,5 +408,28 @@ else
         
         [JsonPropertyName("description")]
         public string? Description { get; set; }
+
+        [JsonPropertyName("primaryPackagePurpose")]
+        public string? PrimaryPackagePurpose { get; set; }
+
+        [JsonPropertyName("externalRefs")]
+        public List<SpdxExternalRef>? ExternalRefs { get; set; }
+
+        /// <summary>Returns the purl from externalRefs if present, otherwise null.</summary>
+        public string? Purl => ExternalRefs?
+            .FirstOrDefault(r => string.Equals(r.ReferenceType, "purl", StringComparison.OrdinalIgnoreCase))
+            ?.ReferenceLocator;
+    }
+
+    private class SpdxExternalRef
+    {
+        [JsonPropertyName("referenceCategory")]
+        public string? ReferenceCategory { get; set; }
+
+        [JsonPropertyName("referenceType")]
+        public string? ReferenceType { get; set; }
+
+        [JsonPropertyName("referenceLocator")]
+        public string? ReferenceLocator { get; set; }
     }
 }
