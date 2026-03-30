@@ -66,6 +66,42 @@ else
         </div>
     </div>
 
+    <h2>Vulnerabilities</h2>
+    @if (vulnerabilities == null)
+    {
+        <p><em>Loading vulnerabilities...</em></p>
+    }
+    else if (!vulnerabilities.Any())
+    {
+        <p class="text-muted"><em>No known vulnerabilities found for this dependency.</em></p>
+    }
+    else
+    {
+        <table class="table table-hover mb-4">
+            <thead>
+                <tr>
+                    <th>CVE ID</th>
+                    <th>Severity</th>
+                    <th>CVSS Score</th>
+                    <th>Description</th>
+                    <th>Published</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var vuln in vulnerabilities)
+                {
+                    <tr>
+                        <td><a href="/vulnerabilities/@vuln.Id">@vuln.CveId</a></td>
+                        <td><span class="badge @SeverityBadgeClass(vuln.Severity)">@(vuln.Severity ?? "N/A")</span></td>
+                        <td>@(vuln.CvssScore.HasValue ? vuln.CvssScore.Value.ToString("F1") : "—")</td>
+                        <td class="text-truncate" style="max-width:300px">@vuln.Description</td>
+                        <td>@(vuln.PublishedDate.HasValue ? vuln.PublishedDate.Value.ToLocalTime().ToString("d") : "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
     <h2>Used By</h2>
     @if (usages == null)
     {
@@ -111,6 +147,7 @@ else
 
     private Dependency? dependency;
     private List<UsageViewModel>? usages;
+    private List<Vulnerability>? vulnerabilities;
 
     protected override async Task OnInitializedAsync()
     {
@@ -135,6 +172,14 @@ else
                     Version = sd.Version,
                     AddedDate = sd.AddedDate
                 }).ToList();
+
+            vulnerabilities = await DbContext.DependencyVulnerabilities
+                .Where(dv => dv.DependencyId == Id)
+                .Include(dv => dv.Vulnerability)
+                .OrderBy(dv => SeverityOrder(dv.Vulnerability.Severity))
+                .ThenByDescending(dv => dv.Vulnerability.CvssScore)
+                .Select(dv => dv.Vulnerability)
+                .ToListAsync();
         }
     }
 
@@ -142,6 +187,24 @@ else
     {
         Navigation.NavigateTo($"/software/{softwareId}");
     }
+
+    private static string SeverityBadgeClass(string? severity) => severity switch
+    {
+        "CRITICAL" => "bg-danger",
+        "HIGH"     => "bg-warning text-dark",
+        "MEDIUM"   => "bg-info text-dark",
+        "LOW"      => "bg-secondary",
+        _          => "bg-light text-dark"
+    };
+
+    private static int SeverityOrder(string? severity) => severity switch
+    {
+        "CRITICAL" => 0,
+        "HIGH"     => 1,
+        "MEDIUM"   => 2,
+        "LOW"      => 3,
+        _          => 4
+    };
 
     private class UsageViewModel
     {

@@ -64,6 +64,7 @@ else
                     <th>Ecosystem</th>
                     <th>Description</th>
                     <th>Registry</th>
+                    <th>Vulnerabilities</th>
                     <th>Added Date</th>
                     <th>Actions</th>
                 </tr>
@@ -85,6 +86,25 @@ else
                             @if (registryUrl != null)
                             {
                                 <a href="@registryUrl" target="_blank" rel="noopener noreferrer">@PurlHelper.GetRegistryLabel(item.Dependency.PackageUrl)</a>
+                            }
+                        </td>
+                        <td>
+                            @{
+                                var vulnCount = item.Dependency.Vulnerabilities.Count;
+                                var worstSeverity = item.Dependency.Vulnerabilities
+                                    .Select(dv => dv.Vulnerability.Severity)
+                                    .OrderBy(SeverityOrder)
+                                    .FirstOrDefault();
+                            }
+                            @if (vulnCount > 0)
+                            {
+                                <a href="/dependencies/@item.Dependency.Id" class="badge @SeverityBadgeClass(worstSeverity) text-decoration-none">
+                                    @vulnCount CVE@(vulnCount == 1 ? "" : "s")
+                                </a>
+                            }
+                            else
+                            {
+                                <span class="badge bg-success">Clean</span>
                             }
                         </td>
                         <td>@item.AddedDate.ToLocalTime().ToString("g")</td>
@@ -121,6 +141,8 @@ else
         {
             dependencies = await DbContext.SoftwareDependencies
                 .Include(sd => sd.Dependency)
+                    .ThenInclude(d => d.Vulnerabilities)
+                        .ThenInclude(dv => dv.Vulnerability)
                 .Where(sd => sd.SoftwareId == Id)
                 .OrderBy(sd => sd.Dependency.Name)
                 .ToListAsync();
@@ -369,6 +391,24 @@ else
             await LoadData();
         }
     }
+
+    private static string SeverityBadgeClass(string? severity) => severity switch
+    {
+        "CRITICAL" => "bg-danger",
+        "HIGH"     => "bg-warning text-dark",
+        "MEDIUM"   => "bg-info text-dark",
+        "LOW"      => "bg-secondary",
+        _          => "bg-light text-dark"
+    };
+
+    private static int SeverityOrder(string? severity) => severity switch
+    {
+        "CRITICAL" => 0,
+        "HIGH"     => 1,
+        "MEDIUM"   => 2,
+        "LOW"      => 3,
+        _          => 4
+    };
 
     // SBOM Model Classes
     private class CycloneDxSbom
