@@ -39,11 +39,11 @@ public class NvdService
         using (var scope = _scopeFactory.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            dependencyInfos = await dbContext.Dependencies
+            var rows = await dbContext.Dependencies
                 .Where(d => !string.IsNullOrEmpty(d.Name))
                 .Select(d => new { d.Id, d.Name, d.Ecosystem })
-                .ToListAsync(cancellationToken)
-                .ContinueWith(t => t.Result.Select(x => (x.Id, x.Name, x.Ecosystem)).ToList(), cancellationToken);
+                .ToListAsync(cancellationToken);
+            dependencyInfos = rows.Select(x => (x.Id, x.Name, x.Ecosystem)).ToList();
         }
 
         _logger.LogInformation("Starting NVD vulnerability update for {Count} dependencies", dependencyInfos.Count);
