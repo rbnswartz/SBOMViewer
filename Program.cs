@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SBOMViewer.Components;
 using SBOMViewer.Data;
+using SBOMViewer.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,6 +12,16 @@ builder.Services.AddRazorComponents()
 // Add database context
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=sbomviewer.db"));
+
+// Add HttpClient for NVD API calls
+builder.Services.AddHttpClient("NVD", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+// Register vulnerability services
+builder.Services.AddSingleton<NvdService>();
+builder.Services.AddHostedService<VulnerabilityUpdateService>();
 
 var app = builder.Build();
 

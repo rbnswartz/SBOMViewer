@@ -23,4 +23,6 @@ public class Dependency
     public string? PackageUrl { get; set; }
 
     public ICollection<SoftwareDependency> SoftwareUsages { get; set; } = new List<SoftwareDependency>();
+
+    public ICollection<DependencyVulnerability> Vulnerabilities { get; set; } = new List<DependencyVulnerability>();
 }

@@ -12,6 +12,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<Software> Software { get; set; } = null!;
     public DbSet<Dependency> Dependencies { get; set; } = null!;
     public DbSet<SoftwareDependency> SoftwareDependencies { get; set; } = null!;
+    public DbSet<Vulnerability> Vulnerabilities { get; set; } = null!;
+    public DbSet<DependencyVulnerability> DependencyVulnerabilities { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -39,6 +41,27 @@ public class ApplicationDbContext : DbContext
 
         modelBuilder.Entity<SoftwareDependency>()
             .HasIndex(sd => new { sd.SoftwareId, sd.DependencyId })
+            .IsUnique();
+
+        // Vulnerability relationships
+        modelBuilder.Entity<DependencyVulnerability>()
+            .HasOne(dv => dv.Vulnerability)
+            .WithMany(v => v.AffectedDependencies)
+            .HasForeignKey(dv => dv.VulnerabilityId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<DependencyVulnerability>()
+            .HasOne(dv => dv.Dependency)
+            .WithMany(d => d.Vulnerabilities)
+            .HasForeignKey(dv => dv.DependencyId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<DependencyVulnerability>()
+            .HasIndex(dv => new { dv.DependencyId, dv.VulnerabilityId })
+            .IsUnique();
+
+        modelBuilder.Entity<Vulnerability>()
+            .HasIndex(v => v.CveId)
             .IsUnique();
     }
 }
